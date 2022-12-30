@@ -1,307 +1,252 @@
 import csv
-import math
-from _datetime import datetime
-import re
-import matplotlib.pyplot as plt
-import numpy as np
 from openpyxl import Workbook
-from openpyxl.styles import Font, Border, Side
+from openpyxl.styles import Border, Side, Alignment, Font
 from openpyxl.utils import get_column_letter
-from openpyxl.styles.numbers import FORMAT_PERCENTAGE_00
-from jinja2 import Environment, FileSystemLoader
-import pdfkit
-from openpyxl.reader.excel import load_workbook
+import matplotlib.pyplot as plt
+import matplotlib
+import numpy as np
+
+title = 0
+salary_minimum = 1
+salary_maximum = 2
+salary = 3
+area = 4
+published = 5
 
 currency_to_rub = {
-    "AZN": 35.68, "BYR": 23.91, "EUR": 59.90, "GEL": 21.74, "KGS": 0.76,
-    "KZT": 0.13, "RUR": 1, "UAH": 1.64, "USD": 60.66, "UZS": 0.0055}
-
-
-class Vacancy:
-    def __init__(self, args):
-        self.name = args[0]
-        self.salary_from = float(args[1])
-        self.salary_to = float(args[2])
-        self.salary_currency = args[3]
-        self.area_name = args[4]
-        self.published_at = args[5]
-
-
-class DataSet:
-    def __init__(self, file_name):
-        self.file_name = file_name
-        self.vacancies_objects = list()
-
-    @staticmethod
-    def csv_reader(file_name):
-        with open(file_name, "r", encoding="utf-8-sig", newline="") as file:
-            data = [x for x in csv.reader(file)]
-        columns = data[0]
-        rows = [x for x in data[1:] if len(x) == len(columns) and not x.__contains__("")]
-        return columns, rows
-
-    @staticmethod
-    def csv_filter(columns, rows):
-        dic_list = list()
-        for row in rows:
-            dic_result = dict()
-            for i in range(len(row)):
-                items = DataSet.format_word(row[i].split('\n'))
-                dic_result[columns[i]] = items[0] if len(items) == 1 else "; ".join(items)
-            dic_list.append(dic_result)
-        return dic_list
-
-    @staticmethod
-    def format_word(items):
-        for i in range(len(items)):
-            items[i] = " ".join(re.sub(r"\<[^>]*\>", "", items[i]).split())
-        return items
-
-    @staticmethod
-    def get_dataset(file_name):
-        data = DataSet.csv_reader(file_name)
-        dict_list = DataSet.csv_filter(data[0], data[1])
-        dataset = DataSet(file_name)
-        for item in dict_list:
-            vacancy = Vacancy([f"{item['name']}", f"{item['salary_from']}", f"{item['salary_to']}",
-                               f"{item['salary_currency']}", f"{item['area_name']}", f"{item['published_at']}"])
-            vacancy.published_at = datetime.strptime(vacancy.published_at, "%Y-%m-%dT%H:%M:%S%z").year
-            dataset.vacancies_objects.append(vacancy)
-        return dataset
-
-
-class InputConnect:
-    def __init__(self):
-        self.params = InputConnect.get_params()
-
-    @staticmethod
-    def get_params():
-        file_name = input("Введите название файла: ")
-        profession_name = input("Введите название профессии: ")
-        return file_name, profession_name
-
-
-    @staticmethod
-    def get_salary_by_city(data: DataSet):
-        salary_by_city = dict()
-        for vacancy in data.vacancies_objects:
-            if math.floor(data.vacancy_rate_by_city[vacancy.area_name] / len(data.vacancies_objects) * 100) >= 1:
-                if not salary_by_city.__contains__(vacancy.area_name):
-                    salary_by_city[vacancy.area_name] = InputConnect.get_currency_to_rub(vacancy)
-                else:
-                    salary_by_city[vacancy.area_name] += InputConnect.get_currency_to_rub(vacancy)
-        for key in salary_by_city:
-            salary_by_city[key] = math.floor(salary_by_city[key] / data.vacancy_rate_by_city[key])
-        return dict(sorted(salary_by_city.items(), key=lambda item: item[1], reverse=True))
-
-    @staticmethod
-    def make_a_value_by_name(vacancy_dict: dict, name):
-        if not vacancy_dict.__contains__(name):
-            vacancy_dict[name] = 1
-        else:
-            vacancy_dict[name] = vacancy_dict[name] + 1
-
-    @staticmethod
-    def get_vacancy_rate_by_city(data: DataSet):
-        vacancy_rate = dict()
-        for vacancy in data.vacancies_objects:
-            InputConnect.make_a_value_by_name(vacancy_rate, vacancy.area_name)
-        return vacancy_rate
-
-    @staticmethod
-    def get_currency_to_rub(vacancy):
-        course_money = currency_to_rub[vacancy.salary_currency]
-        return int((vacancy.salary_from + vacancy.salary_to) * course_money / 2)
-
-    @staticmethod
-    def get_vacancies_count_by_name(data: DataSet, name):
-        vacancies_count = dict()
-        for vacancy in data.vacancies_objects:
-            if vacancy.name.__contains__(name) or name == "None":
-                InputConnect.make_a_value_by_name(vacancies_count, vacancy.published_at)
-        if len(vacancies_count) == 0:
-            return {2022: 0}
-        return vacancies_count
-
-    @staticmethod
-    def get_salary_by_name(data: DataSet, name):
-        salary_by_name = dict()
-        for vacancy in data.vacancies_objects:
-            if vacancy.name.__contains__(name) or name == "None":
-                if not salary_by_name.__contains__(vacancy.published_at):
-                    salary_by_name[vacancy.published_at] = InputConnect.get_currency_to_rub(vacancy)
-                else:
-                    salary_by_name[vacancy.published_at] = salary_by_name[vacancy.published_at] + InputConnect.get_currency_to_rub(vacancy)
-        if len(salary_by_name) == 0:
-            return {2022: 0}
-        for key in salary_by_name.keys():
-            if name == "None":
-                salary_by_name[key] = math.floor(salary_by_name[key] / data.vacancies_count_by_year[key])
-            else:
-                salary_by_name[key] = math.floor(salary_by_name[key] / data.vacancies_count_by_profession_name[key])
-        return salary_by_name
-
-    @staticmethod
-    def print_data_dictionary(self, data: DataSet):
-        def get_correct_vacancy_rate(data: DataSet):
-            data.vacancy_rate_by_city = {x: round(y / len(data.vacancies_objects), 4) for x, y in
-                                         data.vacancy_rate_by_city.items()}
-            return dict(sorted(data.vacancy_rate_by_city.items(), key=lambda item: item[1], reverse=True))
-
-        data.vacancies_count_by_year = InputConnect.get_vacancies_count_by_name(data, "None")
-        data.salary_by_year = InputConnect.get_salary_by_name(data, "None")
-        data.vacancies_count_by_profession_name = InputConnect.get_vacancies_count_by_name(data, self.params[1])
-        data.salary_by_profession_name = InputConnect.get_salary_by_name(data, self.params[1])
-        data.vacancy_rate_by_city = InputConnect.get_vacancy_rate_by_city(data)
-        data.salary_by_city = InputConnect.get_salary_by_city(data)
-        data.vacancy_rate_by_city = get_correct_vacancy_rate(data)
-        data.dict_lict = [data.salary_by_year, data.salary_by_profession_name, data.vacancies_count_by_year,
-                          data.vacancies_count_by_profession_name, dict(list(data.salary_by_city.items())[:10]),
-                          data.vacancy_rate_by_city]
-        print(f"Динамика уровня зарплат по годам: {data.salary_by_year}")
-        print(f"Динамика количества вакансий по годам: {data.vacancies_count_by_year}")
-        print(f"Динамика уровня зарплат по годам для выбранной профессии: {data.salary_by_profession_name}")
-        print(
-            f"Динамика количества вакансий по годам для выбранной профессии: {data.vacancies_count_by_profession_name}")
-        print(f"Уровень зарплат по городам (в порядке убывания): {dict(list(data.salary_by_city.items())[:10])}")
-        print(f"Доля вакансий по городам (в порядке убывания): {dict(list(data.vacancy_rate_by_city.items())[:10])}")
+    "AZN": 35.68,
+    "BYR": 23.91,
+    "EUR": 59.90,
+    "GEL": 21.74,
+    "KGS": 0.76,
+    "KZT": 0.13,
+    "RUR": 1,
+    "UAH": 1.64,
+    "USD": 60.66,
+    "UZS": 0.0055,
+}
 
 
 class Report:
-    def __init__(self, dict_lict: list()):
-        self.data = dict_lict
+    def __init__(self, filename, name):
+        self.filename = filename
+        self.name = name
+        self.years = list(range(2007, 2023))
+        self.years_sums = {}
+        self.years_length = {}
+        self.years_sums_cur = {}
+        self.years_length_cur = {}
+        self.cities = []
+        self.cities_sums = {}
+        self.cities_length = {}
+        self.vacancies_length = 0
+        self.ansCitiesSums = {}
+        self.citiesPartitions = {}
+        self.csv_reader()
+        self.calculate_file()
+        self.Wb = Workbook()
 
-    def generate_xls(self, profession_name):
-        def as_text(value):
-            if value is None:
-                return ""
-            return str(value)
+    def csv_reader(self):
+        flag = False
+        with open(self.filename, encoding="utf-8") as file:
+            reader = csv.reader(file)
+            for data in reader:
+                if not flag:
+                    flag = True
+                    title = data.index("name")
+                    salary_minimum = data.index("salary_from")
+                    salary_maximum = data.index("salary_to")
+                    salary = data.index("salary_currency")
+                    area = data.index("area_name")
+                    published = data.index("published_at")
+                else:
+                    row = data.copy()
+                    if all(row):
+                        curr_year = int(data[published].split("-")[0])
+                        curr_salary = (int(float(data[salary_maximum])) + int(float(data[salary_minimum]))) * \
+                                      currency_to_rub[data[salary]] // 2
+                        curr_name = data[title]
+                        curr_city = data[area]
+                        self.years_sums[curr_year] = self.years_sums.get(curr_year, 0) + curr_salary
+                        self.years_length[curr_year] = self.years_length.get(curr_year, 0) + 1
+                        if profession in curr_name:
+                            self.years_sums_cur[curr_year] = self.years_sums_cur.get(curr_year, 0) + curr_salary
+                            self.years_length_cur[curr_year] = self.years_length_cur.get(curr_year, 0) + 1
+                        if curr_city not in self.cities:
+                            self.cities.append(curr_city)
+                        self.cities_sums[curr_city] = self.cities_sums.get(curr_city, 0) + curr_salary
+                        self.cities_length[curr_city] = self.cities_length.get(curr_city, 0) + 1
+                        self.vacancies_length += 1
 
-        def get_format_percent(worksheet):
-            for i, column_cells in enumerate(worksheet.columns):
-                if i == 4:
-                    for cell in column_cells:
-                        cell.number_format = FORMAT_PERCENTAGE_00
+    def calculate_file(self):
+        for i in self.years:
+            if self.years_sums.get(i, None):
+                self.years_sums[i] = int(self.years_sums[i] // self.years_length[i])
+            if self.years_sums_cur.get(i, None):
+                self.years_sums_cur[i] = int(self.years_sums_cur[i] // self.years_length_cur[i])
 
-        def get_max_length(worksheet):
-            for column_cells in worksheet.columns:
-                length = max(len(as_text(cell.value)) for cell in column_cells)
-                worksheet.column_dimensions[get_column_letter(column_cells[0].column)].width = length + 2
+        for j in self.cities:
+            self.cities_sums[j] = int(self.cities_sums[j] // self.cities_length[j])
+        interesting_cities = [city for city in self.cities if self.cities_length[city] >= self.vacancies_length // 100]
+        self.ansCitiesSums = {key: self.cities_sums[key] for key in
+                              sorted(interesting_cities, key=lambda x: self.cities_sums[x], reverse=True)[:10]}
+        self.citiesPartitions = {key: float("{:.4f}".format(self.cities_length[key] / self.vacancies_length)) for key in
+                                 sorted(interesting_cities, key=lambda x: self.cities_length[x] / self.vacancies_length,
+                                        reverse=True)[:10]}
 
-        def set_border_style(worksheet):
-            for column_cells in worksheet.columns:
-                for cell in column_cells:
-                    bd = Side(style="thin", color="000000")
-                    cell.border = Border(left=bd, top=bd, right=bd, bottom=bd)
+    def print_file(self):
+        print("Динамика уровня зарплат по годам:", self.years_sums)
+        print("Динамика количества вакансий по годам:", self.years_length)
+        if not len(self.years_sums_cur):
+            self.years_sums_cur[2022] = 0
+        print("Динамика уровня зарплат по годам для выбранной профессии:", self.years_sums_cur)
+        if not len(self.years_length_cur):
+            self.years_length_cur[2022] = 0
+        print("Динамика количества вакансий по годам для выбранной профессии:", self.years_length_cur)
+        print("Уровень зарплат по городам (в порядке убывания):", self.ansCitiesSums)
+        print("Доля вакансий по городам (в порядке убывания):", self.citiesPartitions)
 
-        def set_headers(headers, head_range):
-            for i, cell in enumerate(head_range):
-                cell.value = headers[i]
-                cell.font = Font(size=11, b=True)
+    def generate_xls(self):
+        self.years_stat_sheet = self.Wb.create_sheet(title="Статистика по годам")
+        self.cities_stat_sheet = self.Wb.create_sheet(title="Статистика по городам")
+        self.Wb.remove(self.Wb["Sheet"])
+        side = Side(border_style='thin', color="000000")
+        self.border = Border(right=side, top=side, bottom=side, left=side)
+        self.header_alignment = Alignment(horizontal='left')
+        self.data_alignment = Alignment(horizontal='right')
+        self.cities_stat_sheet["a1"] = 12
+        self.report_years()
+        self.report_cities()
+        self.suitable_cells()
+        self.Wb.save('report.xlsx')
 
-        wbook = Workbook()
-        sheet_1 = wbook.worksheets[0]
-        sheet_1.title = "Статистика по годам"
-        sheet_2 = wbook.create_sheet("Статистика по городам")
-        headers = ["Год", "Средняя зарплата", f"Средняя зарплата - {profession_name}",
-                   "Количество вакансий", f"Количество вакансий - {profession_name}"]
-        set_headers(headers, sheet_1['A1':'E1'][0])
-        for key in self.data[0].keys():
-            sheet_1.append([key, self.data[0][key], self.data[1][key], self.data[2][key], self.data[3][key]])
-        set_border_style(sheet_1)
-        get_max_length(sheet_1)
-        set_headers(["Город", "Уровень зарплат"], sheet_2['A1':'B1'][0])
-        set_headers(["Город", "Доля вакансий"], sheet_2['D1':'E1'][0])
-        sheet_2.column_dimensions['C'].width = 2
-        city_keys = list(self.data[5].keys())
-        for i, key in enumerate(self.data[4].keys()):
-            sheet_2.append([key, self.data[4][key], None, city_keys[i], self.data[5][city_keys[i]]])
-        for i, column_cells in enumerate(sheet_2.columns):
-            for cell in column_cells:
-                if i != 2:
-                    bd = Side(style="thin", color="000000")
-                    cell.border = Border(left=bd, top=bd, right=bd, bottom=bd)
-        get_format_percent(sheet_2)
-        get_max_length(sheet_2)
-        wbook.save("report.xlsx")
-        return
+    def report_years(self):
+        headers = ["Год", "Средняя зарплата", "Средняя зарплата - " + self.name,
+                   "Количество вакансий", "Количество вакансий - " + self.name]
+        self.set_headers(self.years_stat_sheet, headers)
 
-    def generate_img(self, profession_name):
-        def myFunction(item):
-            if item.__contains__(' '):
-                return item[:item.index(' ')] + '\n' + item[item.index(' ') + 1:]
-            elif item.__contains__('-'):
-                return item[:item.index('-')] + '-\n' + item[item.index('-') + 1:]
-            return item
+        matrix = []
+        for row in range(len(self.years_sums)):
+            key = list(self.years_sums.keys())[row]
+            appendable = [key, self.years_sums[key], self.years_sums_cur[key], self.years_length[key],
+                          self.years_length_cur[key]]
+            matrix.append(appendable)
 
+        self.complete_matrix(self.years_stat_sheet, matrix, offset=(0, 1))
+
+    def complete_matrix(self, sheet, matrix, offset=(0, 0)):
+        for row in range(len(matrix)):
+            for col in range(len(matrix[0])):
+                address = f"{get_column_letter(col + 1 + offset[0])}{row + 1 + offset[1]}"
+                sheet[address] = matrix[row][col]
+                sheet[address].border = self.border
+                sheet[address].alignment = self.data_alignment
+                sheet.column_dimensions[get_column_letter(col + 1)].auto_size = 1
+
+    def set_headers(self, sheet, headers, offset=(0, 0)):
+        for col in range(0, len(headers)):
+            address = f"{get_column_letter(col + 1 + offset[0])}{1 + offset[1]}"
+            sheet[address] = headers[col]
+            sheet[address].border = self.border
+            sheet[address].alignment = self.header_alignment
+            sheet[address].font = Font(bold=True)
+            sheet.column_dimensions[get_column_letter(col + 1)].auto_size = 1
+
+    def suitable_cells(self):
+        for sheet_name in self.Wb.sheetnames:
+            sheet = self.Wb[sheet_name]
+            for col in range(1, sheet.max_column + 1):
+                width = None
+                for row in range(1, sheet.max_row + 1):
+                    value = sheet[f"{get_column_letter(col)}{row}"].value
+                    if value is not None and (width is None or len(str(value)) > width):
+                        width = len(str(value))
+                if width is not None:
+                    sheet.column_dimensions[f"{get_column_letter(col)}"].width = width + 2
+                else:
+                    sheet.column_dimensions[f"{get_column_letter(col)}"].width = + 2
+
+    def report_cities(self):
+        headers_salarylevel = ["Город", "Уровень зарплат"]
+        headers_percent = ["Город", "Доля вакансий"]
+        self.set_headers(self.cities_stat_sheet, headers_salarylevel)
+        self.set_headers(self.cities_stat_sheet, headers_percent, (3, 0))
+
+        self.data_alignment = Alignment(horizontal='left')
+        self.complete_matrix(self.cities_stat_sheet, [[i] for i in self.ansCitiesSums.keys()], offset=(0, 1))
+        matrix = {key: f"{(val * 10000) // 1 / 100}%" for key, val in self.citiesPartitions.items()}
+        self.complete_matrix(self.cities_stat_sheet, [[i] for i in list(matrix.keys())], offset=(3, 1))
+        self.data_alignment = Alignment(horizontal='right')
+        self.complete_matrix(self.cities_stat_sheet, [[i] for i in list(self.ansCitiesSums.values())], offset=(1, 1))
+        self.complete_matrix(self.cities_stat_sheet, [[i] for i in list(matrix.values())], offset=(4, 1))
+
+    def generate_img(self):
+        matplotlib.rc("font", size=8)
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(nrows=2, ncols=2)
         width = 0.3
-        nums = np.arange(len(self.data[0].keys()))
-        dx1 = nums - width / 2
-        dx2 = nums + width / 2
+        x = np.arange(len(self.years_sums.keys()))
+        payment1 = ax1.bar(x - width / 2, self.years_sums.values(), width, label="средняя з/п")
+        payment2 = ax1.bar(x + width / 2, self.years_sums_cur.values(), width, label=f"з/п {self.name}")
 
-        fig = plt.figure()
-        ax = fig.add_subplot(221)
-        ax.set_title("Уровень зарплат по годам")
-        ax.bar(dx1, self.data[0].values(), width, label="средняя з/п")
-        ax.bar(dx2, self.data[1].values(), width, label=f"з/п {profession_name.lower()}")
-        ax.set_xticks(nums, self.data[0].keys(), rotation="vertical")
-        ax.legend(fontsize=8)
-        ax.tick_params(axis="both", labelsize=8)
-        ax.grid(True, axis='y')
+        ax1.grid(True, axis="y")
+        ax1.set_title("Уровень зарплат по годам")
+        ax1.set_xticks(np.arange(len(self.years_sums.keys())), self.years_sums.keys(), rotation=90)
+        ax1.bar_label(payment1, fmt="")
+        ax1.bar_label(payment2, fmt="")
+        ax1.legend(prop={"size": 6})
 
-        ax = fig.add_subplot(222)
-        ax.set_title("Количество вакансии по годам")
-        ax.bar(dx1, self.data[2].values(), width, label="Количество вакансии")
-        ax.bar(dx2, self.data[3].values(), width, label=f"Количество вакансии\n{profession_name.lower()}")
-        ax.set_xticks(nums, self.data[0].keys(), rotation="vertical")
-        ax.legend(fontsize=8)
-        ax.tick_params(axis="both", labelsize=8)
-        ax.grid(True, axis='y')
+        ax2.grid(True, axis="y")
+        ax2.set_title("Количество вакансий по годам")
+        x = np.arange(len(self.years_sums.keys()))
+        ax2.set_xticks(x, self.years_sums.keys(), rotation=90)
+        vac1 = ax2.bar(x - width / 2, self.years_sums.values(), width, label="Количество вакансий")
+        vac2 = ax2.bar(x + width / 2, self.years_sums_cur.values(), width, label=f"Количество вакансий\n{self.name}")
+        ax2.bar_label(vac1, fmt="")
+        ax2.bar_label(vac2, fmt="")
+        ax2.legend(prop={"size": 6})
 
-        ax = fig.add_subplot(223)
-        ax.set_title("Уровень зарплат по городам")
-        cities = list(map(myFunction, tuple(self.data[4].keys())))
-        y_pos = np.arange(len(cities))
-        ax.barh(y_pos, list(self.data[4].values()), align='center')
-        ax.set_yticks(y_pos, labels=cities)
-        ax.invert_yaxis()
-        ax.grid(True, axis='x')
+        ax3.grid(True, axis="x")
+        y = np.arange(len(list(self.ansCitiesSums.keys())))
+        ax3.set_yticks(y, map(lambda s: s.replace(" ", "\n").replace("-", "\n"), self.ansCitiesSums.keys()))
+        ax3.invert_yaxis()
+        ax3.barh(y, self.ansCitiesSums.values())
+        ax3.set_title("Уровень зарплат по городам")
 
-        ax = fig.add_subplot(224)
-        ax.set_title("Доля вакансии по годам")
-        labels = list(dict(list(self.data[5].items())[:10]).keys())
-        labels.insert(0, "Другие")
-        vals = list(dict(list(self.data[5].items())[:10]).values())
-        vals.insert(0, 1 - sum(list(dict(list(self.data[5].items())[:10]).values())))
-        ax.pie(vals, labels=labels, startangle=0, textprops={"fontsize": 6})
-        plt.tight_layout()
-        fig.set_size_inches(9.5, 7.5)
-        plt.savefig("graph.png", dpi=120)
-        return
+        ax4.set_title("Доля вакансий по городам")
+        other = 1 - sum(self.citiesPartitions.values())
+        ax4.pie([other] + list(self.citiesPartitions.values()),
+                labels=["Другие"] + list(self.citiesPartitions.keys()), startangle=0)
 
-    def generate_pdf(self, profession_name):
-        self.generate_xls(profession_name)
-        self.generate_img(profession_name)
-        name = profession_name
-        image_file = "graph.png"
-        book = load_workbook("report.xlsx")
-        sheet_1 = book.active
-        sheet_2 = book['Статистика по городам']
-        for row in range(2, sheet_2.max_row + 1):
-            for col in range(4, 6):
-                if type(sheet_2.cell(row, col).value).__name__ == "float":
-                    sheet_2.cell(row, col).value = str(round(sheet_2.cell(row, col).value * 100, 2)) + '%'
-        options = {'enable-local-file-access': None}
+        fig.tight_layout(pad=0.4, w_pad=0.5, h_pad=1.0)
+        plt.savefig("graph.png")
+        plt.show()
+
+    def generate_pdf(self):
+        self.generate_img()
         env = Environment(loader=FileSystemLoader('.'))
         template = env.get_template("pdf_template.html")
-        pdf_template = template.render({'name': name, 'image_file': image_file, 'sheet_1': sheet_1, 'sheet_2': sheet_2})
-        config = pdfkit.configuration(wkhtmltopdf=r'D:\wkhtmltopdf\bin\wkhtmltopdf.exe')
-        pdfkit.from_string(pdf_template, 'report.pdf', configuration=config, options=options)
+        pt = os.path.abspath("graph.png")
+
+        statistics = {}
+        for k in self.years:
+            if self.years_sums.get(k, None) is not None:
+                statistics[k] = [self.years_sums[k], self.years_sums_cur[k], self.years_length[k],
+                                 self.years_length_cur[k]]
+
+        file_template = template.render(
+            {"plot": pt,
+             "name": self.name,
+             "years_stat": statistics,
+             "cities_sum": self.ansCitiesSums,
+             "cities_part": {key: ((val * 10000) // 1) / 100 for key, val in self.citiesPartitions.items()}
+             })
+        path = pdfkit.configuration(wkhtmltopdf=r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe')
+        pdfkit.from_string(file_template, "report.pdf", configuration=path,
+                           options={"enable-local-file-access": ""})
 
 
-def main_pdf():
-    inputParam = InputConnect()
-    dataSet = DataSet.get_dataset(inputParam.params[0])
-    InputConnect.print_data_dictionary(inputParam, dataSet)
-    report = Report(dataSet.dict_lict)
-    report.generate_pdf(inputParam.params[1])
+fileName = input("Введите название файла: ")
+profession = input("Введите название профессии: ")
+report = Report(fileName, profession)
+report.print_file()
+report.generate_img()
