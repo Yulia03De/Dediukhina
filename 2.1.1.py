@@ -182,5 +182,4 @@ file_name = input("Введите название файла: ")
 profession = input("Введите название профессии: ")
 report = Report(file_name, profession)
 report.print_file()
-report.generate_xls()
-    
+report.generate_xls()   
